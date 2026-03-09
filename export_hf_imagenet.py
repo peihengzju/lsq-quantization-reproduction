@@ -23,13 +23,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--cache-dir",
         type=Path,
-        default=Path("/home/yph3738/projects/ece_9483/LSQ/Dataset"),
+        default=Path("Dataset"),
         help="HF datasets cache directory",
     )
     p.add_argument(
         "--out-root",
         type=Path,
-        default=Path("/home/yph3738/projects/ece_9483/LSQ/data_imagenet1k"),
+        default=Path("data_imagenet1k"),
         help="Output root for ImageFolder format",
     )
     p.add_argument(
@@ -92,8 +92,6 @@ def export_split(args: argparse.Namespace, split_name: str) -> tuple[int, int]:
     total = 0
 
     target_per_class = args.max_per_class
-    n_classes = len(names)
-
     pbar = tqdm(ds, total=len(ds), desc=f"export-{split_name}", unit="img")
     for idx, ex in enumerate(pbar):
         if target_per_class is not None and all(x >= target_per_class for x in class_written):

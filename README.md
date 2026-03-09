@@ -1,59 +1,58 @@
 # LSQ Reproduction on ImageNet (Pre-Activation ResNet-18)
 
-This repository is my implementation-focused reproduction of the LSQ paper:
+Implementation-focused reproduction of **Learned Step Size Quantization (LSQ)** from arXiv `1902.08153v3`.
 
-- **Paper:** *Learned Step Size Quantization* (arXiv: `1902.08153v3`)
-- **Local copy in this repo:** [`1902.08153v3.pdf`](./1902.08153v3.pdf)
-- **Goal:** reproduce the core training protocol and quantization behavior for ImageNet classification
+- Paper copy in this repo: [`1902.08153v3.pdf`](./1902.08153v3.pdf)
+- Core objective: reproduce LSQ training behavior with a clean, reusable PyTorch pipeline
+- Positioning: graduate-level research engineering project for portfolio / resume use
 
-I built this project as part of my graduate coursework and as a practical, engineering-oriented research reproduction for my portfolio.
+## Overview
 
-## Why This Project
+Quantization-aware training is critical for efficient deployment on constrained hardware. This project reproduces LSQ with paper-aligned defaults and an end-to-end training workflow.
 
-Quantization-aware training is a key technique for deploying deep models on resource-constrained hardware. This project reproduces LSQ with a clean PyTorch codebase and paper-aligned defaults, focusing on:
+Implemented scope:
 
-- implementation correctness
-- reproducible training workflow
-- practical CLI tooling for training and evaluation
+- Model: pre-activation ResNet-18
+- Two-stage training:
+  1. Full-precision baseline training
+  2. LSQ quantized fine-tuning from FP checkpoint
+- Quantized modules: Conv/Linear weights and input activations
+- First/last layer policy: optional higher precision (default 8-bit)
+- Optimizer: SGD + momentum (0.9)
+- LR schedule: cosine annealing
 
-## What Is Implemented
+Paper-aligned defaults (ResNet-18):
 
-- **Model:** pre-activation ResNet-18
-- **Two-stage pipeline:**
-  1. Full-precision (FP) training
-  2. LSQ quantized fine-tuning initialized from FP checkpoint
-- **Quantized targets:** Conv/Linear weights + input activations
-- **First/last layer policy:** optional higher precision (default 8-bit)
-- **Optimizer:** SGD + momentum (`0.9`)
-- **Scheduler:** cosine annealing (no restart)
-- **Default schedule by bit-width (paper-aligned):**
-  - 2/3/4-bit: 90 epochs, LR 0.01
-  - 8-bit: 1 epoch, LR 0.001
-- **Weight decay defaults (ResNet-18, Table 2):**
+- Epoch/LR by bit-width:
+  - 2/3/4-bit: 90 epochs, LR=0.01
+  - 8-bit: 1 epoch, LR=0.001
+- Weight decay (Table 2):
   - 2-bit: `0.25e-4`
   - 3-bit: `0.5e-4`
   - 4/8-bit: `1e-4`
 
-## Repository Layout
+## Repository Structure
 
 - `train_fp.py`: full-precision training
 - `train.py`: LSQ quantized fine-tuning
-- `eval.py`: checkpoint evaluation (FP or LSQ)
-- `lsq/quant/lsq.py`: LSQ quantizer implementation (`gradscale`, `roundpass`, `quantize`)
-- `lsq/models/preact_resnet.py`: pre-activation ResNet-18 + LSQ wrapping
-- `lsq/data/imagenet.py`: ImageNet loaders and transforms
-- `export_hf_imagenet.py`: export HF ImageNet cache to `ImageFolder` layout
-- `split_dataset.py`: random class-folder train/val split helper
+- `eval.py`: evaluation for FP/LSQ checkpoints
+- `lsq/quant/lsq.py`: LSQ quantizer (`gradscale`, `roundpass`, `quantize`)
+- `lsq/models/preact_resnet.py`: pre-activation ResNet-18 + quantization wrapping
+- `lsq/data/imagenet.py`: ImageNet data loading and transforms
+- `export_hf_imagenet.py`: export HF ImageNet cache to `ImageFolder`
+- `split_dataset.py`: split class-folder dataset into train/val
 
-## Environment
+## Quick Start
+
+### 1) Install dependencies
 
 ```bash
 python -m pip install -r requirements.txt
 ```
 
-## Dataset Format
+### 2) Prepare dataset
 
-`--data-root` should contain:
+Expected layout for `--data-root`:
 
 ```text
 <data-root>/
@@ -63,9 +62,7 @@ python -m pip install -r requirements.txt
     class_x/yyy.jpg
 ```
 
-## Data Preparation
-
-### Option A: Export from Hugging Face cache
+Option A (Hugging Face cache export):
 
 ```bash
 python export_hf_imagenet.py \
@@ -74,7 +71,7 @@ python export_hf_imagenet.py \
   --out-root ./data_imagenet1k
 ```
 
-### Option B: Split an existing class-folder dataset
+Option B (split existing class-folder dataset):
 
 ```bash
 python split_dataset.py \
@@ -84,9 +81,7 @@ python split_dataset.py \
   --seed 42
 ```
 
-## Training Workflow
-
-### 1) Train full-precision baseline
+### 3) Train full-precision baseline
 
 ```bash
 python train_fp.py \
@@ -94,7 +89,7 @@ python train_fp.py \
   --output-dir runs/fp_preact18
 ```
 
-### 2) Fine-tune with LSQ (example: W4A4)
+### 4) LSQ fine-tuning (example: W4A4)
 
 ```bash
 python train.py \
@@ -106,7 +101,7 @@ python train.py \
   --first-last-bits 8
 ```
 
-## Evaluation
+### 5) Evaluate checkpoint
 
 ```bash
 python eval.py \
@@ -116,14 +111,14 @@ python eval.py \
   --a-bits 4
 ```
 
-## Engineering Highlights (Portfolio)
+## Engineering Highlights
 
-- Implemented LSQ from paper pseudocode in modular PyTorch layers
-- Built end-to-end reproducible training/evaluation CLI workflow
-- Encoded paper-specific hyperparameter defaults directly in code
-- Added dataset utility scripts for practical experiment setup
+- Reproduced LSQ quantization mechanics from paper pseudocode in modular PyTorch components
+- Encoded paper-specific training defaults directly in CLI-driven training scripts
+- Built a reproducible train/eval pipeline suitable for rapid experiment iteration
+- Added practical dataset tooling for real-world workflow setup
 
 ## Notes
 
-- This repo focuses on faithful implementation and reproducible workflow.
-- Final accuracy may vary with hardware, data pipeline details, and training budget.
+- This repository emphasizes implementation fidelity and workflow reproducibility.
+- Final metrics can vary by hardware, data preprocessing details, and training budget.

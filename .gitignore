@@ -12,3 +12,16 @@ runs/
 # python cache
 __pycache__/
 *.pyc
+
+# environments
+.venv/
+venv/
+env/
+
+# IDE/editor
+.vscode/
+.idea/
+
+# OS / misc
+.DS_Store
+*.log

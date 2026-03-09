@@ -17,13 +17,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--src",
         type=Path,
-        default=Path("/home/yph3738/projects/ece_9483/LSQ/TestDataSet"),
+        required=True,
         help="Source dataset root (class subfolders)",
     )
     parser.add_argument(
         "--dst",
         type=Path,
-        default=Path("/home/yph3738/projects/ece_9483/LSQ/data"),
+        default=Path("data"),
         help="Destination root to create train/ and val/",
     )
     parser.add_argument(
