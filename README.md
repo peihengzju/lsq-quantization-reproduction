@@ -1,10 +1,10 @@
-# LSQ Reproduction on ImageNet (Pre-Activation ResNet-18)
+# LSQ ImageNet Reproduction for Pre-Activation ResNet-18
 
-Implementation-focused reproduction of **Learned Step Size Quantization (LSQ)** from arXiv `1902.08153v3`.
+PyTorch implementation of **Learned Step Size Quantization (LSQ)** on ImageNet-1K, focused on paper-aligned quantization-aware training for PreAct-ResNet18.
 
-- Paper copy in this repo: [`1902.08153v3.pdf`](./1902.08153v3.pdf)
-- Core objective: reproduce LSQ training behavior with a clean, reusable PyTorch pipeline
-- Scope: full-precision baseline + LSQ quantized fine-tuning on ImageNet-1k
+- Reference paper: [Learned Step Size Quantization (LSQ)](https://arxiv.org/abs/1902.08153)
+- Scope: FP32 baseline pretraining + LSQ low-bit fine-tuning on ImageNet-1K
+- Status: implementation-focused reproduction with reproducible training and evaluation workflows
 
 ## What Is Implemented
 
@@ -14,6 +14,7 @@ Implementation-focused reproduction of **Learned Step Size Quantization (LSQ)** 
   2. LSQ fine-tuning from FP checkpoint
 - Quantized modules: Conv/Linear weights and input activations
 - First/last layer policy: optional higher precision (default 8-bit)
+- Configurable bit-widths: W2-W8 / A2-A8 via CLI flags
 - Optimizer: SGD + momentum (0.9)
 - LR schedule: cosine annealing
 
@@ -37,7 +38,7 @@ The following are run results from this repo (March 2026):
 | LSQ W8A8 (first/last 8-bit) | 1 | 68.52 | 88.50 | -1.15 |
 | LSQ W4A4 (first/last 8-bit) | 90 | 68.64 | 88.28 | -1.03 |
 
-Key takeaway: the 4-bit quantized model is within about **1.0 top-1** of FP in this setup.
+Key takeaway: the W4A4 model is within about **1.0 Top-1** of the FP32 baseline in this setup.
 
 ## Repository Structure
 
@@ -46,7 +47,8 @@ Key takeaway: the 4-bit quantized model is within about **1.0 top-1** of FP in t
 - `eval.py`: evaluation for FP/LSQ checkpoints
 - `lsq/quant/lsq.py`: LSQ quantizer (`grad_scale`, `round_pass`, learnable step size)
 - `lsq/models/preact_resnet.py`: pre-activation ResNet-18 + quantization wrapping
-- `lsq/data/imagenet.py`: ImageNet data loading and transforms
+- `lsq/engine/trainer.py`: shared training / evaluation loop
+- `summarize_results.py`: summarize saved runs into a compact table / CSV
 - `export_hf_imagenet.py`: export HF ImageNet cache to `ImageFolder`
 - `split_dataset.py`: split class-folder dataset into train/val
 
@@ -149,5 +151,14 @@ python eval.py \
 
 ## Notes
 
-- This repository emphasizes implementation fidelity and workflow reproducibility.
+- This repository is intended as an ImageNet LSQ training reproduction, not a general-purpose quantization framework.
 - Final numbers can vary with hardware, preprocessing, augmentation details, and random seed.
+- This implementation uses `Resize/Crop + ToTensor()` and does not apply ImageNet mean/std normalization.
+- Checkpoints now include metadata describing preprocessing, quantization config, and training settings.
+- The default paper-style recipe keeps first/last layers at 8-bit; this is paper-aligned but not intended as an all-INT4 deployment format.
+
+## Compatibility Notes
+
+- If you integrate these checkpoints into a deployment or kernel-optimization project, prefer reading quantization config from checkpoint metadata rather than retyping CLI flags.
+- External evaluation scripts that assume standard ImageNet normalization will report incorrect accuracy for these checkpoints unless they match this repo's preprocessing.
+- Paper-style `first/last 8-bit` checkpoints may leave `conv1` and `fc` outside an INT4-only inference path by design.

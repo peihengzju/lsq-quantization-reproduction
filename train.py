@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import torch
@@ -9,6 +10,27 @@ import torch.optim as optim
 from lsq.data import build_imagenet_loaders, infer_num_classes
 from lsq.engine import run_training
 from lsq.models import LSQConfig, apply_lsq_quantization, preact_resnet18
+
+
+class _Tee:
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, data):
+        for s in self.streams:
+            s.write(data)
+        return len(data)
+
+    def flush(self):
+        for s in self.streams:
+            s.flush()
+
+
+def _enable_file_logging(log_path: Path) -> None:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    fh = open(log_path, "a", encoding="utf-8", buffering=1)
+    sys.stdout = _Tee(sys.stdout, fh)
+    sys.stderr = _Tee(sys.stderr, fh)
 
 
 def parse_args():
@@ -21,6 +43,12 @@ def parse_args():
     )
     p.add_argument("--fp-ckpt", type=str, required=True, help="Full precision checkpoint path")
     p.add_argument("--output-dir", type=str, default="runs/lsq_preact18")
+    p.add_argument(
+        "--log-file",
+        type=str,
+        default=None,
+        help="Optional log file path. Default: <output-dir>/train.log",
+    )
     p.add_argument("--batch-size", type=int, default=256)
     p.add_argument("--num-workers", type=int, default=8)
 
@@ -32,6 +60,32 @@ def parse_args():
         "--signed-input-first-layer",
         action="store_true",
         help="Quantize first-layer input with signed activation range",
+    )
+    p.add_argument(
+        "--w-grad-scale-mode",
+        type=str,
+        default="lsq",
+        choices=["lsq", "n", "none"],
+        help="Weight step-size gradient scale mode: lsq=1/sqrt(N*Qp), n=1/sqrt(N), none=1",
+    )
+    p.add_argument(
+        "--a-grad-scale-mode",
+        type=str,
+        default="lsq",
+        choices=["lsq", "n", "none"],
+        help="Activation step-size gradient scale mode: lsq=1/sqrt(N*Qp), n=1/sqrt(N), none=1",
+    )
+    p.add_argument(
+        "--w-grad-scale-factor",
+        type=float,
+        default=1.0,
+        help="Additional multiplier for weight step-size gradient scale",
+    )
+    p.add_argument(
+        "--a-grad-scale-factor",
+        type=float,
+        default=1.0,
+        help="Additional multiplier for activation step-size gradient scale",
     )
 
     p.add_argument("--epochs", type=int, default=None)
@@ -68,8 +122,58 @@ def load_fp_checkpoint(model: torch.nn.Module, ckpt_path: str) -> None:
     model.load_state_dict(state, strict=True)
 
 
+def build_checkpoint_meta(
+    args: argparse.Namespace,
+    *,
+    num_classes: int,
+    epochs: int,
+    lr: float,
+    weight_decay: float,
+    layer_policy: list[dict],
+) -> dict:
+    return {
+        "repo": "LSQ reproduction",
+        "model_name": "preact_resnet18",
+        "checkpoint_type": "lsq",
+        "data": {
+            "data_root": args.data_root,
+            "num_classes": num_classes,
+            "train_transform": ["Resize(256)", "RandomCrop(224)", "RandomHorizontalFlip(0.5)", "ToTensor()"],
+            "val_transform": ["Resize(256)", "CenterCrop(224)", "ToTensor()"],
+            "normalize": None,
+        },
+        "quantization": {
+            "w_bits": args.w_bits,
+            "a_bits": args.a_bits,
+            "first_last_bits": args.first_last_bits,
+            "quantize_first_last_8bit": not args.disable_first_last_8bit,
+            "signed_input_first_layer": args.signed_input_first_layer,
+            "w_grad_scale_mode": args.w_grad_scale_mode,
+            "a_grad_scale_mode": args.a_grad_scale_mode,
+            "w_grad_scale_factor": args.w_grad_scale_factor,
+            "a_grad_scale_factor": args.a_grad_scale_factor,
+            "layer_policy": layer_policy,
+        },
+        "train": {
+            "epochs": epochs,
+            "lr": lr,
+            "weight_decay": weight_decay,
+            "momentum": args.momentum,
+            "batch_size": args.batch_size,
+            "num_workers": args.num_workers,
+            "seed": args.seed,
+            "fp_ckpt": args.fp_ckpt,
+        },
+    }
+
+
 def main():
     args = parse_args()
+    out_dir = Path(args.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    log_path = Path(args.log_file) if args.log_file else out_dir / "train.log"
+    _enable_file_logging(log_path)
 
     torch.manual_seed(args.seed)
     torch.backends.cudnn.benchmark = True
@@ -92,11 +196,20 @@ def main():
         first_last_bits=args.first_last_bits,
         quantize_first_last_8bit=not args.disable_first_last_8bit,
         signed_input_first_layer=args.signed_input_first_layer,
+        w_grad_scale_mode=args.w_grad_scale_mode,
+        a_grad_scale_mode=args.a_grad_scale_mode,
+        w_grad_scale_factor=args.w_grad_scale_factor,
+        a_grad_scale_factor=args.a_grad_scale_factor,
     )
     layer_policy = apply_lsq_quantization(model, qcfg)
     model = model.to(device)
 
     print(f"Training config: epochs={epochs}, lr={lr}, weight_decay={wd}, momentum={args.momentum}")
+    print(
+        "Grad-scale config: "
+        f"w_mode={args.w_grad_scale_mode}, a_mode={args.a_grad_scale_mode}, "
+        f"w_factor={args.w_grad_scale_factor}, a_factor={args.a_grad_scale_factor}"
+    )
     print("Layer quantization policy:")
     for item in layer_policy:
         print(
@@ -120,11 +233,20 @@ def main():
     )
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
-    Path(args.output_dir).mkdir(parents=True, exist_ok=True)
-    with open(Path(args.output_dir) / "run_args.txt", "w", encoding="utf-8") as f:
+    with open(out_dir / "run_args.txt", "w", encoding="utf-8") as f:
         run_args = vars(args).copy()
         run_args["num_classes"] = num_classes
+        run_args["log_file"] = str(log_path)
         f.write(str(run_args))
+
+    checkpoint_meta = build_checkpoint_meta(
+        args,
+        num_classes=num_classes,
+        epochs=epochs,
+        lr=lr,
+        weight_decay=wd,
+        layer_policy=layer_policy,
+    )
 
     run_training(
         model=model,
@@ -135,6 +257,7 @@ def main():
         epochs=epochs,
         device=device,
         out_dir=args.output_dir,
+        checkpoint_meta=checkpoint_meta,
     )
 
 

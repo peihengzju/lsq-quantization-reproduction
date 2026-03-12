@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -101,46 +102,86 @@ def run_training(
     epochs: int,
     device,
     out_dir: str,
+    checkpoint_meta: dict | None = None,
 ):
     criterion = nn.CrossEntropyLoss()
     best_top1 = 0.0
+    out_path = Path(out_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+    metrics_csv = out_path / "metrics.csv"
 
-    for epoch in range(epochs):
-        t0 = time.time()
-        train_stats = train_one_epoch(model, train_loader, criterion, optimizer, device)
-        val_stats = evaluate(model, val_loader, criterion, device)
-        scheduler.step()
+    with open(metrics_csv, "w", encoding="utf-8", newline="") as mf:
+        writer = csv.writer(mf)
+        writer.writerow(
+            [
+                "epoch",
+                "train_loss",
+                "train_top1",
+                "train_top5",
+                "val_loss",
+                "val_top1",
+                "val_top5",
+                "best_top1",
+                "epoch_time_sec",
+            ]
+        )
 
-        if val_stats.top1 > best_top1:
-            best_top1 = val_stats.top1
-            save_checkpoint(
-                {
+        for epoch in range(epochs):
+            t0 = time.time()
+            train_stats = train_one_epoch(model, train_loader, criterion, optimizer, device)
+            val_stats = evaluate(model, val_loader, criterion, device)
+            scheduler.step()
+
+            if val_stats.top1 > best_top1:
+                best_top1 = val_stats.top1
+                best_state = {
                     "epoch": epoch + 1,
                     "model": model.state_dict(),
                     "optimizer": optimizer.state_dict(),
                     "best_top1": best_top1,
-                },
-                out_dir,
-                filename="best.pth",
-            )
+                }
+                if checkpoint_meta is not None:
+                    best_state["meta"] = checkpoint_meta
+                save_checkpoint(
+                    best_state,
+                    out_dir,
+                    filename="best.pth",
+                )
 
-        save_checkpoint(
-            {
+            last_state = {
                 "epoch": epoch + 1,
                 "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
                 "best_top1": best_top1,
-            },
-            out_dir,
-            filename="last.pth",
-        )
+            }
+            if checkpoint_meta is not None:
+                last_state["meta"] = checkpoint_meta
+            save_checkpoint(
+                last_state,
+                out_dir,
+                filename="last.pth",
+            )
 
-        dt = time.time() - t0
-        print(
-            f"[Epoch {epoch + 1:03d}/{epochs:03d}] "
-            f"train_loss={train_stats.loss:.4f} train_top1={train_stats.top1:.2f} "
-            f"val_loss={val_stats.loss:.4f} val_top1={val_stats.top1:.2f} "
-            f"val_top5={val_stats.top5:.2f} time={dt:.1f}s"
-        )
+            dt = time.time() - t0
+            writer.writerow(
+                [
+                    epoch + 1,
+                    f"{train_stats.loss:.6f}",
+                    f"{train_stats.top1:.4f}",
+                    f"{train_stats.top5:.4f}",
+                    f"{val_stats.loss:.6f}",
+                    f"{val_stats.top1:.4f}",
+                    f"{val_stats.top5:.4f}",
+                    f"{best_top1:.4f}",
+                    f"{dt:.4f}",
+                ]
+            )
+            mf.flush()
+            print(
+                f"[Epoch {epoch + 1:03d}/{epochs:03d}] "
+                f"train_loss={train_stats.loss:.4f} train_top1={train_stats.top1:.2f} "
+                f"val_loss={val_stats.loss:.4f} val_top1={val_stats.top1:.2f} "
+                f"val_top5={val_stats.top5:.2f} time={dt:.1f}s"
+            )
 
     print(f"Finished training. Best val@1 = {best_top1:.2f}")

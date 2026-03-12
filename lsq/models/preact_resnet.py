@@ -111,6 +111,10 @@ class LSQConfig:
     first_last_bits: int = 8
     quantize_first_last_8bit: bool = True
     signed_input_first_layer: bool = False
+    w_grad_scale_mode: str = "lsq"
+    a_grad_scale_mode: str = "lsq"
+    w_grad_scale_factor: float = 1.0
+    a_grad_scale_factor: float = 1.0
 
 
 def preact_resnet18(num_classes: int = 1000) -> PreActResNet:
@@ -148,6 +152,10 @@ def apply_lsq_quantization(model: nn.Module, cfg: LSQConfig) -> List[LayerPolicy
                 w_bits=w_bits,
                 a_bits=a_bits,
                 a_signed=a_signed,
+                w_grad_scale_mode=cfg.w_grad_scale_mode,
+                a_grad_scale_mode=cfg.a_grad_scale_mode,
+                w_grad_scale_factor=cfg.w_grad_scale_factor,
+                a_grad_scale_factor=cfg.a_grad_scale_factor,
                 quantize_input=True,
             )
             _replace_module(parent, child_name, wrapped)
@@ -158,6 +166,8 @@ def apply_lsq_quantization(model: nn.Module, cfg: LSQConfig) -> List[LayerPolicy
                     "w_bits": w_bits,
                     "a_bits": a_bits,
                     "a_signed": a_signed,
+                    "w_g_mode": cfg.w_grad_scale_mode,
+                    "a_g_mode": cfg.a_grad_scale_mode,
                     "quantize_input": True,
                 }
             )
@@ -169,6 +179,10 @@ def apply_lsq_quantization(model: nn.Module, cfg: LSQConfig) -> List[LayerPolicy
                 w_bits=w_bits,
                 a_bits=a_bits,
                 a_signed=False,
+                w_grad_scale_mode=cfg.w_grad_scale_mode,
+                a_grad_scale_mode=cfg.a_grad_scale_mode,
+                w_grad_scale_factor=cfg.w_grad_scale_factor,
+                a_grad_scale_factor=cfg.a_grad_scale_factor,
                 quantize_input=True,
             )
             _replace_module(parent, child_name, wrapped)
@@ -179,6 +193,8 @@ def apply_lsq_quantization(model: nn.Module, cfg: LSQConfig) -> List[LayerPolicy
                     "w_bits": w_bits,
                     "a_bits": a_bits,
                     "a_signed": False,
+                    "w_g_mode": cfg.w_grad_scale_mode,
+                    "a_g_mode": cfg.a_grad_scale_mode,
                     "quantize_input": True,
                 }
             )

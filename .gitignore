@@ -1,7 +1,7 @@
 # datasets
-data/
-data_imagenet1k/
-Dataset/
+/data/
+/data_imagenet1k/
+/Dataset/
 
 # training outputs / checkpoints
 runs/
